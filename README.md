@@ -1,3 +1,6 @@
 # stable-diffusion-from-scratch をみんなで作るリポジトリ
 
-aaa
+tora
+rinost081
+lemolatoon
+sutonchoko ^^
