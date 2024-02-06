@@ -5,7 +5,8 @@ from decoder import VAE_AttentionBlock,VAE_ResidualBlock
 
 class VAE_Encoder(nn.Sequential):
     def __init__(self):
-        super().__init(
+        #super().__init__()の)は動画内ではこの形になっていた
+        super().__init__(
             #VAEのEncoderの形状
             #3チャンネル,512,512
             #(Batch_Size,Channel,Height,Width)ー> (Batch_Size,128,Height,Width) 元画像の周囲にパディングをしたので畳みこみをしても大きさが元の画像と同じ
@@ -83,42 +84,42 @@ class VAE_Encoder(nn.Sequential):
             #なぜカーネルサイズ1で畳み込みしてるのか、畳み込みになっていないのではないか
         )
 
-#引数の型はテンソル、xとnoiseが関数の引数  ->tensorは関数の戻り値の型指定
-#xとnoiseを入力してテンソル型を出力ということ
-def forward(self,x:torch.Tensor,noise:torch.Tensor)->torch.Tensor:
-    #x:(Batch_size,channnel,Height,Width)
-    #noise:(Batch_size,Out_Channels,Height  /8 ,Width  /  8)
+    #引数の型はテンソル、xとnoiseが関数の引数  ->tensorは関数の戻り値の型指定
+    #xとnoiseを入力してテンソル型を出力ということ
+    def forward(self,x:torch.Tensor,noise:torch.Tensor)->torch.Tensor:
+        #x:(Batch_size,channnel,Height,Width)
+        #noise:(Batch_size,Out_Channels,Height  /8 ,Width  /  8)
 
-    #getattr関数は、第一引数に指定されたオブジェクトから、第二引数で指定された名前の属性を取得しようとします。もし属性が存在しない場合は、第三引数で指定されたデフォルト値（この場合はNone）を返します。
-    for module in self:
-        if getattr(module,'stride',None)==(2,2): #各モジュールからstride属性を取得しその値が(2,2)であるかどうかを確認
-            
-            #各モジュールからstride属性を取得というのはどういうことか
+        #getattr関数は、第一引数に指定されたオブジェクトから、第二引数で指定された名前の属性を取得しようとします。もし属性が存在しない場合は、第三引数で指定されたデフォルト値（この場合はNone）を返します。
+        for module in self:
+            if getattr(module,'stride',None)==(2,2): #各モジュールからstride属性を取得しその値が(2,2)であるかどうかを確認
+                
+                #各モジュールからstride属性を取得というのはどういうことか
 
-            #(Padding Left, Padding Right, Padding Top, Padding Bottom)
-            x= F.pad(x,(0,1,0,1))  #なぜ(0,1,0,1)
-        x=module(x)
+                #(Padding Left, Padding Right, Padding Top, Padding Bottom)
+                x= F.pad(x,(0,1,0,1))  #なぜ(0,1,0,1)
+            x=module(x)
 
-    #(Batch_Size,8,Height/8 ,Width/8  )  -> two tensors of shape (Baatch_size,4, Height, Width)
-    #指定されたdimに沿って入力テンソルxを2このテンソルに均等に分割する関数
-    #分割した1つめのテンソルはmeanに、2つめのテンソルはlog_varianceとする
-    mean,log_varianece=torch.chunk(x,2,dim=1) 
+        #(Batch_Size,8,Height/8 ,Width/8  )  -> two tensors of shape (Baatch_size,4, Height, Width)
+        #指定されたdimに沿って入力テンソルxを2このテンソルに均等に分割する関数
+        #分割した1つめのテンソルはmeanに、2つめのテンソルはlog_varianceとする
+        mean,log_varianece=torch.chunk(x,2,dim=1) 
 
-    #(Batch_Size,4,Height/8,Width/8) -> (Batch_Size,4,Height/8, Width / 8)
-    variance=log_varianece.exp()  #logvarianceの各要素に対して指数を適用 e^(log_variance)
-    
-    #サイズ変化はなし
-    stdev=variance.sqrt() #平方根
+        #(Batch_Size,4,Height/8,Width/8) -> (Batch_Size,4,Height/8, Width / 8)
+        variance=log_varianece.exp()  #logvarianceの各要素に対して指数を適用 e^(log_variance)
+        
+        #サイズ変化はなし
+        stdev=variance.sqrt() #平方根
 
-    #Z= N(0,1)から取り出す N(mean,variance)
-    #x= mean +stdev *Z
-    x=mean +stdev*noise  #noiseはforwardの引数でテンソル型、正規分布からサンプリングされている
+        #Z= N(0,1)から取り出す N(mean,variance)
+        #x= mean +stdev *Z
+        x=mean +stdev*noise  #noiseはforwardの引数でテンソル型、正規分布からサンプリングされている
 
-    #定数によって出力をscale
-    x*=0.18215  #なぜこの値なのか
+        #定数によって出力をscale
+        x*=0.18215  #なぜこの値なのか
 
-    return x
-    
+        return x
+        
 
 
 
