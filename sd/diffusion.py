@@ -3,22 +3,26 @@ from torch import nn
 from torch.nn import functional as F
 from attention import SelfAttention,CrossAttention
 
+#super__init__()の意味
+
 class Upsample(nn.Module):
 
     def __init__(self,channels:int):
-        super().__init__()
+        super().__init__()  
         self.conv=nn.Conv2d(channels,channels,kernel_size=3,padding=1)
     
     def forward(self,x):
-        x=F.interpolate(x,scale_factor=2,mode="nearest")
-        return self.conv(x)
+        x=F.interpolate(x,scale_factor=2,mode="nearest")  #interpolate(入力、scale_factor=2倍,mode=nearest　アップサンプリング時に各ピク節の値を最も近い入力ピクセルの値に置き換える方法)
+        return self.conv(x)   #アップサンプリングされた画像xを畳み込み
 
+#時間情報を埋め込むクラス
+#時間情報は通常連続値だが、ニューラルネットワークは離散値を扱うので線形変換を用いて時間情報を高次元ベクトルに変換する　というのはどういうことか
 
 class TimeEmbedding(nn.Module):
     #Unetはノイズ化されるところで時間埋め込みを受け取る
     def __init__(self,n_embd:int):
         super().__init__()   #Linear(入力特徴量数、出力特徴量数)
-        self.linear_1=nn.Linear(n_embd,4*n_embd)#特徴量数4倍になる  なぜ線形変換しているのか
+        self.linear_1=nn.Linear(n_embd,4*n_embd)#特徴量数4倍になる 特徴量が４倍に増えるというのはどういうこと
         self.linear_2=nn.Linear(4*n_embd,4*n_embd)
     
     def forward(self,x:torch.Tensor)->torch.Tensor:
@@ -32,7 +36,8 @@ class TimeEmbedding(nn.Module):
 
         #(1,1280)
         return x 
-    
+
+#残差ブロック
 class UNET_ResidualBlock(nn.Module):
      
      #この中の意味
@@ -40,9 +45,9 @@ class UNET_ResidualBlock(nn.Module):
     def __init__(self,in_channles,out_channels:int,n_time=1280):
         super().__init__()
         #GroupNorm(幾つのグループに分割するか、入力テンソルのチャンネル数)
-        #各グループの特徴マップが平均0、分散1になる
-        self.groupnorm_feature=nn.GroupNorm(32,in_channles)
-        self.conv_feature=nn.Linear(n_time,out_channels)  #なぜ線形変換
+        self.groupnorm_feature=nn.GroupNorm(32,in_channles)  #各グループの特徴マップが平均0、分散1になる
+        self.conv_feature=nn.Linear(n_time,out_channels,kernel_size=3,padding=1) 
+        self.linear_time=nn.Linear(n_time,out_channels)
 
         self.groupnorm_merged=nn.GroupNorm(32,out_channels)
         self.conv_merged=nn.Conv2d(out_channels,out_channels,kernel_size=3,padding=1)
@@ -59,15 +64,15 @@ class UNET_ResidualBlock(nn.Module):
         #time (1,1280)    timeは何か
         resiidue=feature
 
-        feature=self.groupnorm_feature(feature)
+        feature=self.groupnorm_feature(feature)  #特徴をグループ正規化　
 
-        feature=F.silu(feature)
+        feature=F.silu(feature)  #活性化関数に通す
 
-        feature=self.conv_feature(feature)
+        feature=self.conv_feature(feature)  #畳み込み
 
-        time=F.silu(time)
+        time=F.silu(time) #時間を活性化関数に通す
 
-        time=self.linear_time(time)
+        time=self.linear_time(time) #time=1280が入力で出力outchannels とは何のこと
         
         #featureとtimeを足すが、timeにはバッチサイズと入力チャンネル数がないので形状を揃える
         #unsqueeze(-1)最後の次元に2つ次元を追加 ブロードキャストを行なっている
@@ -92,7 +97,7 @@ class UNET_AttentionBlock(nn.Module):
         super().__init__()
         channels=n_head*n_embd
 
-        self.groupnorm=nn.nn.GroupNorm(32,channnel,eps=1e-6)
+        self.groupnorm=nn.nn.GroupNorm(32,channel,eps=1e-6)
         self.conv_input=nn.Conv2d(channels,channels,kernel_size=1,padding=0)
 
         self.layernorm_1=nn.LayerNorm(channels)
@@ -122,33 +127,28 @@ class UNET_AttentionBlock(nn.Module):
         #(Batch_Size,Features,Height*Width)->(Batch_Size,Height*Width,Features)
         x=x.transpose(-1,-2)
         
-        #スキップ接続
+        #スキップ接続とセルフアテンション
         #スキップ接続の残差　アテンションを通らない矢印
-        residue_short=x
+        residue_short=x  #残差を保存
         x=self.layernorm_1(x)  #スキップ接続のMulti-Head Attentionの部分
-        self.attention_1(x)  
+        self.attention_1(x)  #セルフアテンション
         #スキップ接続　アテンションを通らない矢印
-        x+=residue_short
-        residue_short=x
+        x+=residue_short #アテンションを通った後のxに保存してあった残差を足す
 
-
+        #スキップ接続とクロスアテンション
+        residue_short=x   #1つ目のスキップ接続の出力についてスキップ接続を用いた残差ブロック
         #Normalization+self attention with skip connection
         x=self.layernorm_1(x)  #引数はチャンネル数
-    
         self.attention_2(x,context)  #潜在表現とプロンプトのクロスアテンション　引数はヘッド数、チャンネル数、d_context
-
         x+=residue_short
-        residue_short=x
         
+        #スキップ接続とレイヤー正規化
+        residue_short=x
         #feed forward
         x=self.layernorm_3(x) #レイヤー正規化
-
         x,gate=self.linear_geglu_1(x).chunk(2,dim=-1)
-
         x=x*F.gglu(gate)
-
         x=self.linear_geglu_2(x)
-
         x+=residue_short
 
         x=x.tranpose(-1,-2)  #クロスアテンションを使うために転置していた部分を元の状態にする
@@ -175,7 +175,7 @@ class SwitchSequential(nn.Sequential):
                 x=layer(x)
             return x
         
-class UNET_OutputLayer(nn.Module):
+class UNET_OutputLayer(nn.Module):  #なぜこれだけ独立しているのか
     def __init__(self,in_channles:int,out_channels:int):
         super().__init__()
         self.groupnorm=nn.GroupNorm(32,in_channles)
@@ -192,12 +192,14 @@ class UNET_OutputLayer(nn.Module):
         return x
 
 
+#Unetに入力して出力されるまでの部分
 class Diffusion(nn.Module):
+    #timeは潜在表現がノイズ化された時の時刻を記録
     #Unetはノイズ除去のタイムステップを受け取る必要がある
     def __init__(self):
         self.time_embedding=TimeEmbedding(320)
         self.unet=UNET()
-        self.final=UNET_OutLayer(320,4)
+        self.final=UNET_OutputLayer(320,4)
 
     def forward(self,latent:torch.Tensor,context:torch.Tensor,time:torch.Tensor):
         #latent :(Batch_Size,4,Heoght  / 8  ,Width  /  8)  4チャンネルといううのはエンコーダーの出力
@@ -217,7 +219,7 @@ class Diffusion(nn.Module):
         output=self.final(output)
         
         #(Batch,4,Heoght  /  8 ,Width / 8)
-        return output
+        return output  #Unetの出力
 
 class UNET(nn.Module):
 
