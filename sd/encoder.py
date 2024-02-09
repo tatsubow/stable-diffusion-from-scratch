@@ -22,7 +22,7 @@ class VAE_Encoder(nn.Sequential):
             
             #(Batch_Size,128,Height,Width)ー> (Batch_Size,128,Height 　/  2 , Width  /  2) 
             #strideが2なので大きさが1/2になる
-            nn.Conv2d(128,128,kernel_size=3,stride=2,padding=0),#1行前でoutputが128チャンネルなのでこの行は入力128チャンネル   ネットのonvolutional visualizerというのを使って説明していた
+            nn.Conv2d(128,128,kernel_size=3,stride=2,padding=0),#1行前でoutputが128チャンネルなのでこの行は入力128チャンネル   ネットcのonvolutional visualizerというのを使って説明していた
             
             #(Batch_Size,128,Height/2 ,Width/2  )ー> (Batch_Size,256,Height 　/  2 , Width  /  2) 
             VAE_ResidualBlock(128,256), #featureの数を増やした　入力の特徴量が128で出力の特徴量が256ということ
@@ -84,41 +84,43 @@ class VAE_Encoder(nn.Sequential):
             #なぜカーネルサイズ1で畳み込みしてるのか、畳み込みになっていないのではないか
         )
 
-    #引数の型はテンソル、xとnoiseが関数の引数  ->tensorは関数の戻り値の型指定
+    
     #xとnoiseを入力してテンソル型を出力ということ
     def forward(self,x:torch.Tensor,noise:torch.Tensor)->torch.Tensor:
-        #x:(Batch_size,channnel,Height,Width)
-        #noise:(Batch_size,Out_Channels,Height  /8 ,Width  /  8)
+        #入力xの形状:(Batch_size,channnel,Height,Width)
+        #入力noiseの形状:(Batch_size,Out_Channels,Height  /8 ,Width  /  8)
 
         #getattr関数は、第一引数に指定されたオブジェクトから、第二引数で指定された名前の属性を取得しようとします。もし属性が存在しない場合は、第三引数で指定されたデフォルト値（この場合はNone）を返します。
-        for module in self:
-            if getattr(module,'stride',None)==(2,2): #各モジュールからstride属性を取得しその値が(2,2)であるかどうかを確認
+        for module in self:                          #初期化の部分の各層を順に計算
+            if getattr(module,'stride',None)==(2,2): #各モジュールからstride属性を取得し(2,2)であるかどうかを確認 stride属性が(2,2)というのは水平垂直方向に2ずつフィルターが動くということ　stride=2の場合ということで畳み込みの3つが当てはまる
                 
-                #各モジュールからstride属性を取得というのはどういうことか
-
                 #(Padding Left, Padding Right, Padding Top, Padding Bottom)
-                x= F.pad(x,(0,1,0,1))  #なぜ(0,1,0,1)
+                x= F.pad(x,(0,1,0,1))  #初期化の部分の畳み込みnn.conv2dはパディングなしだったのはここで手動で設定するため
             x=module(x)
 
+        #既にあるモデルの何が近いかを一般的に一部を変更しただけという場合が多い、理由はあまりない場合もある
+
         #(Batch_Size,8,Height/8 ,Width/8  )  -> two tensors of shape (Baatch_size,4, Height, Width)
-        #指定されたdimに沿って入力テンソルxを2このテンソルに均等に分割する関数
-        #分割した1つめのテンソルはmeanに、2つめのテンソルはlog_varianceとする
-        mean,log_varianece=torch.chunk(x,2,dim=1) 
+        mean,log_varianece=torch.chunk(x,2,dim=1) #2番目の次元に沿ってxを2つのテンソルに分割、分割した1つめのテンソルはmeanに、2つめのテンソルはlog_varianceとする
+
+        #分散が大きすぎたり小さすぎたりした時でも-30以上-20以下にする　-30より小さい場合は-30、-20より大きい場合は-20
+        log_varianece=torch.clamp(log_varianece,-30,-20)  #VAEが計算する事後分布の分散が大きくなると正解分布との差が大きくなりklダイバージェンスが大きくなりやすく勾配爆発に繋がる可能性があるらしい
 
         #(Batch_Size,4,Height/8,Width/8) -> (Batch_Size,4,Height/8, Width / 8)
         variance=log_varianece.exp()  #logvarianceの各要素に対して指数を適用 e^(log_variance)
         
-        #サイズ変化はなし
-        stdev=variance.sqrt() #平方根
+        #サイズ変化はなし 
+        stdev=variance.sqrt() #標準偏差は分散の平方根
 
-        #Z= N(0,1)から取り出す N(mean,variance)
-        #x= mean +stdev *Z
-        x=mean +stdev*noise  #noiseはforwardの引数でテンソル型、正規分布からサンプリングされている
+        #Z= N(0,1)から取り出す N(mean,variance)=X
+        #X= mean +stdev *Z という式でXをZで表せる
+        x=mean +stdev*noise  #noiseはforwardの引数でテンソル型、正規分布N(0,1)からサンプリングされている
 
         #定数によって出力をscale
-        x*=0.18215  #なぜこの値なのか
+        x*=0.18215  #この値は動画の作者が参照した資料になぜかあった値らしい
 
         return x
+        
         
 
 
