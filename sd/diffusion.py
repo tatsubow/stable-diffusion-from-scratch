@@ -4,6 +4,8 @@ from torch.nn import functional as F
 from attention import SelfAttention,CrossAttention
 
 #super__init__()の意味
+#time embedding
+#マスクの部分
 
 class Upsample(nn.Module):
 
@@ -232,9 +234,9 @@ class UNET(nn.Module):
             #conv2d(入力チャンネル数、出力チャンネル数、カーネルサイズ、パディング)
             SwitchSequential(nn.Conv2d(4,320,kernel_size=3,padding=1)),  #Unetの図の一番左のチャンネル数を増やす3層を一度に4から320チャンネルにしている
 
-            SwitchSequential(UNET_ResidualBlock(320,320),UNET_AttentionBlock),
+            SwitchSequential(UNET_ResidualBlock(320,320),UNET_AttentionBlock(8,40)),
 
-            SwitchSequential(UNET_ResidualBlock(320,320),UNET_AttentionBlock),
+            SwitchSequential(UNET_ResidualBlock(320,320),UNET_AttentionBlock(8,40)),
             
 
             #エンコーダーなので畳み込みで形状を小さくする、特徴量数は増える

@@ -101,13 +101,13 @@ class VAE_Encoder(nn.Sequential):
         #既にあるモデルの何が近いかを一般的に一部を変更しただけという場合が多い、理由はあまりない場合もある
 
         #(Batch_Size,8,Height/8 ,Width/8  )  -> two tensors of shape (Baatch_size,4, Height, Width)
-        mean,log_varianece=torch.chunk(x,2,dim=1) #2番目の次元に沿ってxを2つのテンソルに分割、分割した1つめのテンソルはmeanに、2つめのテンソルはlog_varianceとする
+        mean,log_variance=torch.chunk(x,2,dim=1) #2番目の次元に沿ってxを2つのテンソルに分割、分割した1つめのテンソルはmeanに、2つめのテンソルはlog_varianceとする
 
         #分散が大きすぎたり小さすぎたりした時でも-30以上-20以下にする　-30より小さい場合は-30、-20より大きい場合は-20
-        log_varianece=torch.clamp(log_varianece,-30,-20)  #VAEが計算する事後分布の分散が大きくなると正解分布との差が大きくなりklダイバージェンスが大きくなりやすく勾配爆発に繋がる可能性があるらしい
+        log_variance=torch.clamp(log_variance,-30,-20)  #VAEが計算する事後分布の分散が大きくなると正解分布との差が大きくなりklダイバージェンスが大きくなりやすく勾配爆発に繋がる可能性があるらしい
 
         #(Batch_Size,4,Height/8,Width/8) -> (Batch_Size,4,Height/8, Width / 8)
-        variance=log_varianece.exp()  #logvarianceの各要素に対して指数を適用 e^(log_variance)
+        variance=log_variance.exp()  #logvarianceの各要素に対して指数を適用 e^(log_variance)
         
         #サイズ変化はなし 
         stdev=variance.sqrt() #標準偏差は分散の平方根
