@@ -80,7 +80,7 @@ class CLIPLayer(nn.Module):
 
         return x
 
-class ClIP(nn.Module):
+class CLIP(nn.Module):
 
     def __init__(self):
         super().__init__()
